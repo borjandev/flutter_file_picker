@@ -21,24 +21,28 @@ class FilePickerMacOS extends FilePicker {
       type,
       allowedExtensions,
     );
-    final List<String> arguments = generateCommandLineArguments(
-      escapeDialogTitle(dialogTitle ?? defaultDialogTitle),
-      fileFilter: fileFilter,
-      initialDirectory: initialDirectory ?? '',
-      multipleFiles: allowMultiple,
-      pickDirectory: false,
-    );
 
-    final String? fileSelectionResult = await runExecutableWithArguments(
-      executable,
-      arguments,
-    );
-    if (fileSelectionResult == null) {
-      return null;
+    String? fileSelectionResult;
+    if (filePaths == null) {
+      final List<String> arguments = generateCommandLineArguments(
+        escapeDialogTitle(dialogTitle ?? defaultDialogTitle),
+        fileFilter: fileFilter,
+        initialDirectory: initialDirectory ?? '',
+        multipleFiles: allowMultiple,
+        pickDirectory: false,
+      );
+
+      final String? fileSelectionResult = await runExecutableWithArguments(
+        executable,
+        arguments,
+      );
+      if (fileSelectionResult == null) {
+        return null;
+      }
     }
 
     filePaths ??= resultStringToFilePaths(
-      fileSelectionResult,
+      fileSelectionResult ?? '',
     );
 
     final List<PlatformFile> platformFiles = await filePathsToPlatformFiles(
