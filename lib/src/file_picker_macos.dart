@@ -14,6 +14,7 @@ class FilePickerMacOS extends FilePicker {
     bool withData = false,
     bool withReadStream = false,
     bool lockParentWindow = false,
+    List<String>? filePaths,
   }) async {
     final String executable = await isExecutableOnPath('osascript');
     final String fileFilter = fileTypeToFileFilter(
@@ -36,9 +37,10 @@ class FilePickerMacOS extends FilePicker {
       return null;
     }
 
-    final List<String> filePaths = resultStringToFilePaths(
+    filePaths ??= resultStringToFilePaths(
       fileSelectionResult,
     );
+
     final List<PlatformFile> platformFiles = await filePathsToPlatformFiles(
       filePaths,
       withReadStream,
@@ -168,10 +170,7 @@ class FilePickerMacOS extends FilePicker {
     return arguments;
   }
 
-  String escapeDialogTitle(String dialogTitle) => dialogTitle
-      .replaceAll('\\', '\\\\')
-      .replaceAll('"', '\\"')
-      .replaceAll('\n', '\\\n');
+  String escapeDialogTitle(String dialogTitle) => dialogTitle.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\\n');
 
   /// Transforms the result string (stdout) of `osascript` into a [List] of
   /// POSIX file paths.
@@ -180,12 +179,8 @@ class FilePickerMacOS extends FilePicker {
       return [];
     }
 
-    final paths = fileSelectionResult
-        .trim()
-        .split(', alias ')
-        .map((String path) => path.trim())
-        .where((String path) => path.isNotEmpty)
-        .toList();
+    final paths =
+        fileSelectionResult.trim().split(', alias ').map((String path) => path.trim()).where((String path) => path.isNotEmpty).toList();
 
     if (paths.length == 1 && paths.first.startsWith('file ')) {
       // The first token of the first path is "file" in case of the save file

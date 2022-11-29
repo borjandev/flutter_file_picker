@@ -25,12 +25,11 @@ class FilePickerWindows extends FilePicker {
     bool withData = false,
     bool withReadStream = false,
     bool lockParentWindow = false,
+    List<String>? filePaths,
   }) async {
     final comdlg32 = DynamicLibrary.open('comdlg32.dll');
 
-    final getOpenFileNameW =
-        comdlg32.lookupFunction<GetOpenFileNameW, GetOpenFileNameWDart>(
-            'GetOpenFileNameW');
+    final getOpenFileNameW = comdlg32.lookupFunction<GetOpenFileNameW, GetOpenFileNameWDart>('GetOpenFileNameW');
 
     final Pointer<OPENFILENAMEW> openFileNameW = _instantiateOpenFileNameW(
       allowMultiple: allowMultiple,
@@ -44,7 +43,7 @@ class FilePickerWindows extends FilePicker {
     final result = getOpenFileNameW(openFileNameW);
     FilePickerResult? returnValue;
     if (result == 1) {
-      final filePaths = _extractSelectedFilesFromOpenFileNameW(
+      filePaths ??= _extractSelectedFilesFromOpenFileNameW(
         openFileNameW.ref,
       );
       final platformFiles = await filePathsToPlatformFiles(
@@ -70,8 +69,7 @@ class FilePickerWindows extends FilePicker {
     bool lockParentWindow = false,
     String? initialDirectory,
   }) {
-    int hr = CoInitializeEx(
-        nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    int hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
     if (!SUCCEEDED(hr)) throw WindowsException(hr);
 
@@ -81,9 +79,7 @@ class FilePickerWindows extends FilePicker {
     hr = fileDialog.getOptions(optionsPointer);
     if (!SUCCEEDED(hr)) throw WindowsException(hr);
 
-    final options = optionsPointer.value |
-        FILEOPENDIALOGOPTIONS.FOS_PICKFOLDERS |
-        FILEOPENDIALOGOPTIONS.FOS_FORCEFILESYSTEM;
+    final options = optionsPointer.value | FILEOPENDIALOGOPTIONS.FOS_PICKFOLDERS | FILEOPENDIALOGOPTIONS.FOS_FORCEFILESYSTEM;
     hr = fileDialog.setOptions(options);
     if (!SUCCEEDED(hr)) throw WindowsException(hr);
 
@@ -149,9 +145,7 @@ class FilePickerWindows extends FilePicker {
   }) async {
     final comdlg32 = DynamicLibrary.open('comdlg32.dll');
 
-    final getSaveFileNameW =
-        comdlg32.lookupFunction<GetSaveFileNameW, GetSaveFileNameWDart>(
-            'GetSaveFileNameW');
+    final getSaveFileNameW = comdlg32.lookupFunction<GetSaveFileNameW, GetSaveFileNameWDart>('GetSaveFileNameW');
 
     final Pointer<OPENFILENAMEW> openFileNameW = _instantiateOpenFileNameW(
       allowedExtensions: allowedExtensions,
@@ -239,9 +233,7 @@ class FilePickerWindows extends FilePicker {
 
     if (filePaths.length > 1) {
       final String directoryPath = filePaths.removeAt(0);
-      return filePaths
-          .map<String>((filePath) => join(directoryPath, filePath))
-          .toList();
+      return filePaths.map<String>((filePath) => join(directoryPath, filePath)).toList();
     }
 
     return filePaths;
@@ -260,14 +252,11 @@ class FilePickerWindows extends FilePicker {
     final Pointer<OPENFILENAMEW> openFileNameW = calloc<OPENFILENAMEW>();
 
     openFileNameW.ref.lStructSize = sizeOf<OPENFILENAMEW>();
-    openFileNameW.ref.lpstrTitle =
-        (dialogTitle ?? defaultDialogTitle).toNativeUtf16();
+    openFileNameW.ref.lpstrTitle = (dialogTitle ?? defaultDialogTitle).toNativeUtf16();
     openFileNameW.ref.lpstrFile = calloc.allocate<Utf16>(lpstrFileBufferSize);
-    openFileNameW.ref.lpstrFilter =
-        fileTypeToFileFilter(type, allowedExtensions).toNativeUtf16();
+    openFileNameW.ref.lpstrFilter = fileTypeToFileFilter(type, allowedExtensions).toNativeUtf16();
     openFileNameW.ref.nMaxFile = lpstrFileBufferSize;
-    openFileNameW.ref.lpstrInitialDir =
-        (initialDirectory ?? '').toNativeUtf16();
+    openFileNameW.ref.lpstrInitialDir = (initialDirectory ?? '').toNativeUtf16();
     openFileNameW.ref.flags = ofnExplorer | ofnFileMustExist | ofnHideReadOnly;
 
     if (lockParentWindow) {
@@ -281,9 +270,7 @@ class FilePickerWindows extends FilePicker {
     if (defaultFileName != null) {
       validateFileName(defaultFileName);
 
-      final Uint16List nativeString = openFileNameW.ref.lpstrFile
-          .cast<Uint16>()
-          .asTypedList(maximumPathLength);
+      final Uint16List nativeString = openFileNameW.ref.lpstrFile.cast<Uint16>().asTypedList(maximumPathLength);
       final safeName = defaultFileName.substring(
         0,
         min(maximumPathLength - 1, defaultFileName.length),
@@ -299,13 +286,10 @@ class FilePickerWindows extends FilePicker {
   Pointer _getWindowHandle() {
     final user32 = DynamicLibrary.open('user32.dll');
 
-    final findWindowA = user32.lookupFunction<
-        Int32 Function(Pointer<Utf8> lpClassName, Pointer<Utf8> lpWindowName),
-        int Function(Pointer<Utf8> lpClassName,
-            Pointer<Utf8> lpWindowName)>('FindWindowA');
+    final findWindowA = user32.lookupFunction<Int32 Function(Pointer<Utf8> lpClassName, Pointer<Utf8> lpWindowName),
+        int Function(Pointer<Utf8> lpClassName, Pointer<Utf8> lpWindowName)>('FindWindowA');
 
-    int hWnd =
-        findWindowA('FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf8(), nullptr);
+    int hWnd = findWindowA('FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf8(), nullptr);
 
     return Pointer.fromAddress(hWnd);
   }

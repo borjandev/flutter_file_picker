@@ -18,6 +18,7 @@ class FilePickerLinux extends FilePicker {
     bool withData = false,
     bool withReadStream = false,
     bool lockParentWindow = false,
+    List<String>? filePaths,
   }) async {
     final String executable = await _getPathToExecutable();
     final dialogHandler = DialogHandler(executable);
@@ -43,9 +44,10 @@ class FilePickerLinux extends FilePicker {
       return null;
     }
 
-    final List<String> filePaths = dialogHandler.resultStringToFilePaths(
+    filePaths ??= dialogHandler.resultStringToFilePaths(
       fileSelectionResult,
     );
+
     final List<PlatformFile> platformFiles = await filePathsToPlatformFiles(
       filePaths,
       withReadStream,
@@ -62,8 +64,7 @@ class FilePickerLinux extends FilePicker {
     String? initialDirectory,
   }) async {
     final executable = await _getPathToExecutable();
-    final List<String> arguments =
-        DialogHandler(executable).generateCommandLineArguments(
+    final List<String> arguments = DialogHandler(executable).generateCommandLineArguments(
       dialogTitle ?? defaultDialogTitle,
       initialDirectory: initialDirectory ?? '',
       pickDirectory: true,

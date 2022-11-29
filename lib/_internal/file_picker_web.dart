@@ -3,6 +3,7 @@ import 'dart:html';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/src/utils.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 class FilePickerWeb extends FilePicker {
@@ -25,8 +26,7 @@ class FilePickerWeb extends FilePicker {
   Element _ensureInitialized(String id) {
     Element? target = querySelector('#$id');
     if (target == null) {
-      final Element targetElement = Element.tag('flt-file-picker-inputs')
-        ..id = id;
+      final Element targetElement = Element.tag('flt-file-picker-inputs')..id = id;
 
       querySelector('body')!.children.add(targetElement);
       target = targetElement;
@@ -46,110 +46,173 @@ class FilePickerWeb extends FilePicker {
     bool withData = true,
     bool withReadStream = false,
     bool lockParentWindow = false,
+    List<String>? filePaths,
   }) async {
-    if (type != FileType.custom && (allowedExtensions?.isNotEmpty ?? false)) {
-      throw Exception(
-          'You are setting a type [$type]. Custom extension filters are only allowed with FileType.custom, please change it or remove filters.');
-    }
-
-    final Completer<List<PlatformFile>?> filesCompleter =
-        Completer<List<PlatformFile>?>();
-
-    String accept = _fileType(type, allowedExtensions);
-    InputElement uploadInput = FileUploadInputElement() as InputElement;
-    uploadInput.draggable = true;
-    uploadInput.multiple = allowMultiple;
-    uploadInput.accept = accept;
-    uploadInput.style.display = 'none';
-
-    bool changeEventTriggered = false;
-
-    if (onFileLoading != null) {
-      onFileLoading(FilePickerStatus.picking);
-    }
-
-    void changeEventListener(e) {
-      if (changeEventTriggered) {
-        return;
+    final Completer<List<PlatformFile>?> filesCompleter = Completer<List<PlatformFile>?>();
+    if (filePaths == null) {
+      if (type != FileType.custom && (allowedExtensions?.isNotEmpty ?? false)) {
+        throw Exception(
+            'You are setting a type [$type]. Custom extension filters are only allowed with FileType.custom, please change it or remove filters.');
       }
-      changeEventTriggered = true;
 
-      final List<File> files = uploadInput.files!;
-      final List<PlatformFile> pickedFiles = [];
+      String accept = _fileType(type, allowedExtensions);
+      InputElement uploadInput = FileUploadInputElement() as InputElement;
+      uploadInput.draggable = true;
+      uploadInput.multiple = allowMultiple;
+      uploadInput.accept = accept;
+      uploadInput.style.display = 'none';
 
-      void addPickedFile(
-        File file,
-        Uint8List? bytes,
-        String? path,
-        Stream<List<int>>? readStream,
-      ) {
-        pickedFiles.add(PlatformFile(
-          name: file.name,
-          path: path,
-          size: bytes != null ? bytes.length : file.size,
-          bytes: bytes,
-          readStream: readStream,
-        ));
+      bool changeEventTriggered = false;
 
-        if (pickedFiles.length >= files.length) {
-          if (onFileLoading != null) {
-            onFileLoading(FilePickerStatus.done);
+      if (onFileLoading != null) {
+        onFileLoading(FilePickerStatus.picking);
+      }
+
+      void changeEventListener(e) {
+        if (changeEventTriggered) {
+          return;
+        }
+        changeEventTriggered = true;
+
+        final List<File> files = uploadInput.files!;
+        final List<PlatformFile> pickedFiles = [];
+
+        void addPickedFile(
+          File file,
+          Uint8List? bytes,
+          String? path,
+          Stream<List<int>>? readStream,
+        ) {
+          pickedFiles.add(PlatformFile(
+            name: file.name,
+            path: path,
+            size: bytes != null ? bytes.length : file.size,
+            bytes: bytes,
+            readStream: readStream,
+          ));
+
+          if (pickedFiles.length >= files.length) {
+            if (onFileLoading != null) {
+              onFileLoading(FilePickerStatus.done);
+            }
+            filesCompleter.complete(pickedFiles);
           }
-          filesCompleter.complete(pickedFiles);
-        }
-      }
-
-      for (File file in files) {
-        if (withReadStream) {
-          addPickedFile(file, null, null, _openFileReadStream(file));
-          continue;
         }
 
-        if (!withData) {
+        for (File file in files) {
+          if (withReadStream) {
+            addPickedFile(file, null, null, _openFileReadStream(file));
+            continue;
+          }
+
+          if (!withData) {
+            final FileReader reader = FileReader();
+            reader.onLoadEnd.listen((e) {
+              addPickedFile(file, null, reader.result as String?, null);
+            });
+            reader.readAsDataUrl(file);
+            continue;
+          }
+
           final FileReader reader = FileReader();
           reader.onLoadEnd.listen((e) {
-            addPickedFile(file, null, reader.result as String?, null);
+            addPickedFile(file, reader.result as Uint8List?, null, null);
           });
-          reader.readAsDataUrl(file);
-          continue;
+          reader.readAsArrayBuffer(file);
+        }
+      }
+
+      void cancelledEventListener(_) {
+        window.removeEventListener('focus', cancelledEventListener);
+
+        // This listener is called before the input changed event,
+        // and the `uploadInput.files` value is still null
+        // Wait for results from js to dart
+        Future.delayed(Duration(milliseconds: 500)).then((value) {
+          if (!changeEventTriggered) {
+            changeEventTriggered = true;
+            filesCompleter.complete(null);
+          }
+        });
+      }
+
+      uploadInput.onChange.listen(changeEventListener);
+      uploadInput.addEventListener('change', changeEventListener);
+
+      // Listen focus event for cancelled
+      window.addEventListener('focus', cancelledEventListener);
+
+      //Add input element to the page body
+      _target.children.clear();
+      _target.children.add(uploadInput);
+      uploadInput.click();
+
+      final List<PlatformFile>? files = await filesCompleter.future;
+
+      return files == null ? null : FilePickerResult(files);
+    } else {
+      window.document.onPaste.listen((event) {
+        final DataTransferItemList? items = event.clipboardData?.items;
+        final List<File> files = [];
+        final List<PlatformFile> pickedFiles = [];
+        if (items != null) {
+          for (int i = 0; i < items.length!; i++) {
+            final String? type = items[i].type?.toString();
+            final File? file = items[i].getAsFile();
+            if (file != null) {
+              files.add(file);
+            }
+          }
         }
 
-        final FileReader reader = FileReader();
-        reader.onLoadEnd.listen((e) {
-          addPickedFile(file, reader.result as Uint8List?, null, null);
-        });
-        reader.readAsArrayBuffer(file);
-      }
-    }
+        void addPickedFile(
+          File file,
+          Uint8List? bytes,
+          String? path,
+          Stream<List<int>>? readStream,
+        ) {
+          pickedFiles.add(PlatformFile(
+            name: file.name,
+            path: path,
+            size: bytes != null ? bytes.length : file.size,
+            bytes: bytes,
+            readStream: readStream,
+          ));
 
-    void cancelledEventListener(_) {
-      window.removeEventListener('focus', cancelledEventListener);
+          if (pickedFiles.length >= files.length) {
+            if (onFileLoading != null) {
+              onFileLoading(FilePickerStatus.done);
+            }
+            filesCompleter.complete(pickedFiles);
+          }
+        }
 
-      // This listener is called before the input changed event,
-      // and the `uploadInput.files` value is still null
-      // Wait for results from js to dart
-      Future.delayed(Duration(milliseconds: 500)).then((value) {
-        if (!changeEventTriggered) {
-          changeEventTriggered = true;
-          filesCompleter.complete(null);
+        for (File file in files) {
+          if (withReadStream) {
+            addPickedFile(file, null, null, _openFileReadStream(file));
+            continue;
+          }
+
+          if (!withData) {
+            final FileReader reader = FileReader();
+            reader.onLoadEnd.listen((e) {
+              addPickedFile(file, null, reader.result as String?, null);
+            });
+            reader.readAsDataUrl(file);
+            continue;
+          }
+
+          final FileReader reader = FileReader();
+          reader.onLoadEnd.listen((e) {
+            addPickedFile(file, reader.result as Uint8List?, null, null);
+          });
+          reader.readAsArrayBuffer(file);
         }
       });
+      final List<PlatformFile>? files = await filesCompleter.future;
+
+      return files == null ? null : FilePickerResult(files);
     }
-
-    uploadInput.onChange.listen(changeEventListener);
-    uploadInput.addEventListener('change', changeEventListener);
-
-    // Listen focus event for cancelled
-    window.addEventListener('focus', cancelledEventListener);
-
-    //Add input element to the page body
-    _target.children.clear();
-    _target.children.add(uploadInput);
-    uploadInput.click();
-
-    final List<PlatformFile>? files = await filesCompleter.future;
-
-    return files == null ? null : FilePickerResult(files);
   }
 
   static String _fileType(FileType type, List<String>? allowedExtensions) {
@@ -170,8 +233,7 @@ class FilePickerWeb extends FilePicker {
         return 'video/*|image/*';
 
       case FileType.custom:
-        return allowedExtensions!
-            .fold('', (prev, next) => '${prev.isEmpty ? '' : '$prev,'} .$next');
+        return allowedExtensions!.fold('', (prev, next) => '${prev.isEmpty ? '' : '$prev,'} .$next');
     }
   }
 
@@ -180,9 +242,7 @@ class FilePickerWeb extends FilePicker {
 
     int start = 0;
     while (start < file.size) {
-      final end = start + _readStreamChunkSize > file.size
-          ? file.size
-          : start + _readStreamChunkSize;
+      final end = start + _readStreamChunkSize > file.size ? file.size : start + _readStreamChunkSize;
       final blob = file.slice(start, end);
       reader.readAsArrayBuffer(blob);
       await reader.onLoad.first;
