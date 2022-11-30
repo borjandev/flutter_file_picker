@@ -32,7 +32,7 @@ class FilePickerMacOS extends FilePicker {
         pickDirectory: false,
       );
 
-      final String? fileSelectionResult = await runExecutableWithArguments(
+      fileSelectionResult = await runExecutableWithArguments(
         executable,
         arguments,
       );
